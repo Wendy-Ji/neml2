@@ -63,8 +63,8 @@ LinearInterpolationOnVariable::LinearInterpolationOnVariable(const OptionSet & o
     _x(declare_input_variable<Scalar>("argument")),
     _output(declare_output_variable<Scalar>("output"))
 {
-  for (const auto & fv : options.get<std::vector<VariableName>>("ordinate_vector"))
-    _Y.push_back(&declare_input_variable<Scalar>(fv));
+  for (const auto & y : options.get<std::vector<VariableName>>("ordinate_vector"))
+    _Y.push_back(&declare_input_variable<Scalar>(y));
 
   const auto X_refs = options.get<std::vector<TensorName<Scalar>>>("abscissa_vector");
   _X.resize(_Y.size());
@@ -82,6 +82,7 @@ LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din
   auto X1 = Scalar::zeros(_Y.size() - 1);
   auto Y0 = Scalar::zeros(_Y.size() - 1);
 
+  // partial derivatives for ordinate variables
   auto Y_dev_lo = Scalar::zeros(_Y.size() - 1);
   auto Y_dev_hi = Scalar::zeros(_Y.size() - 1);
   auto Y_dev = Scalar::zeros(_Y.size());
@@ -94,19 +95,16 @@ LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din
     Y0[i] = *_Y[i];
 
     Y_dev_lo[i] = (*_X[i + 1] - _x) / (*_X[i + 1] - *_X[i]);
-    Y_dev_hi[i] = (_x - *_X[i]) / (*_X[i + 1] - *_X[i]);
+    Y_dev_hi[i] = 1 - Y_dev_lo[i];
   }
 
-  // cannot use gt,le as the finite differencing uses the higher point's gradient at abrupt changes
-  // in gradient, e.g. changing from 1 to 0, it will use the 0
   const auto loc = Scalar(at::logical_and(at::ge(_x, X0), at::lt(_x, X1)));
   const auto si = Scalar(slope.index({loc}));
 
-  // partial derivatives for stresses
-  const auto Y_dev_lo_i = Scalar(Y_dev_lo.index({loc}));
-  const auto Y_dev_hi_i = Scalar(Y_dev_hi.index({loc}));
-  Y_dev.batch_index({indexing::Slice(indexing::None, -1)}).index_put_({loc}, Y_dev_lo_i);
-  Y_dev.batch_index({indexing::Slice(1, indexing::None)}).index_put_({loc}, Y_dev_hi_i);
+  Y_dev.batch_index({indexing::Slice(indexing::None, -1)})
+      .index_put_({loc}, Scalar(Y_dev_lo.index({loc})));
+  Y_dev.batch_index({indexing::Slice(1, indexing::None)})
+      .index_put_({loc}, Scalar(Y_dev_hi.index({loc})));
 
   if (out)
   {
