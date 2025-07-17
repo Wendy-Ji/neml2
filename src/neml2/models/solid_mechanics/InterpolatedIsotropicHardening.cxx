@@ -75,57 +75,37 @@ InterpolatedIsotropicHardening::InterpolatedIsotropicHardening(const OptionSet &
 void
 InterpolatedIsotropicHardening::set_value(bool out, bool dout_din, bool d2out_din2)
 {
-  auto slope = Scalar::zeros(_stress.size() - 1);
-  auto X0 = Scalar::zeros(_stress.size() - 1);
-  auto X1 = Scalar::zeros(_stress.size() - 1);
-  auto Y0 = Scalar::zeros(_stress.size() - 1);
+  // current temperature
+  const auto temp = Scalar(this->_temp_var);
 
-  auto stress_dev_lo = Scalar::zeros(_stress.size() - 1);
-  auto stress_dev_hi = Scalar::zeros(_stress.size() - 1);
-  auto stress_dev = Scalar::zeros(_stress.size());
-
-  for (std::size_t i = 0; i < _stress.size() - 1; i++)
-  {
-    slope[i] = (*_stress[i + 1] - *_stress[i]) / (*_hf_temps[i + 1] - *_hf_temps[i]);
-    X0[i] = *_hf_temps[i];
-    X1[i] = *_hf_temps[i + 1];
-    Y0[i] = *_stress[i];
-
-    stress_dev_lo[i] = (*_hf_temps[i + 1] - _temp_var) / (*_hf_temps[i + 1] - *_hf_temps[i]);
-    stress_dev_hi[i] = (_temp_var - *_hf_temps[i]) / (*_hf_temps[i + 1] - *_hf_temps[i]);
-  }
-
-  // cannot use gt,le as the finite differencing uses the higher point's gradient at abrupt changes
-  // in gradient, e.g. changing from 1 to 0, it will use the 0
-  const auto loc = Scalar(at::logical_and(at::ge(_temp_var, X0), at::lt(_temp_var, X1)));
-  const auto si = Scalar(slope.index({loc}));
-
-  // partial derivatives for stresses
-  const auto stress_dev_lo_i = Scalar(stress_dev_lo.index({loc}));
-  const auto stress_dev_hi_i = Scalar(stress_dev_hi.index({loc}));
-  stress_dev.batch_index({indexing::Slice(indexing::None, -1)}).index_put_({loc}, stress_dev_lo_i);
-  stress_dev.batch_index({indexing::Slice(1, indexing::None)}).index_put_({loc}, stress_dev_hi_i);
+  // interpolation
+  const auto ind_lo = 0;
+  const auto ind_hi = 1;
+  const auto frac = (temp - *_hf_temps[ind_lo]) / (*_hf_temps[ind_hi] - *_hf_temps[ind_lo]);
 
   if (out)
   {
-    const auto X0i = Scalar(X0.index({loc}));
-    const auto Y0i = Scalar(Y0.index({loc}));
-
-    _h = Y0i + si * (_temp_var - X0i);
+    _h = (1 - frac) * (*_stress[ind_lo]) + frac * (*_stress[ind_hi]);
   }
 
   if (dout_din)
   {
-    if (_temp_var.is_dependent())
-      _h.d(_temp_var) = si;
-
     for (std::size_t i = 0; i < _stress.size(); i++)
     {
       if (_stress[i]->is_dependent())
       {
-        _h.d(*_stress[i]) = Scalar(stress_dev[i]);
+        if (i == ind_lo)
+          _h.d(*_stress[i]) = 1 - frac;
+        else if (i == ind_hi)
+          _h.d(*_stress[i]) = frac;
+        else
+          _h.d(*_stress[i]) = neml2::Scalar::full(0.0);
       }
     }
+
+    if (_temp_var.is_dependent())
+      _h.d(_temp_var) =
+          (*_stress[ind_hi] - *_stress[ind_lo]) / (*_hf_temps[ind_hi] - *_hf_temps[ind_lo]);
   }
 
   if (d2out_din2)
