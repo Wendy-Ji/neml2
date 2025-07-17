@@ -25,6 +25,7 @@
 #include "neml2/models/solid_mechanics/InterpolatedIsotropicHardening.h"
 #include "neml2/tensors/Scalar.h"
 #include "neml2/tensors/indexing.h"
+// #include "neml2/tensors/functions/cat.h"
 
 namespace neml2
 {
@@ -79,8 +80,9 @@ InterpolatedIsotropicHardening::set_value(bool out, bool dout_din, bool d2out_di
   auto X1 = Scalar::zeros(_stress.size() - 1);
   auto Y0 = Scalar::zeros(_stress.size() - 1);
 
-  // auto stress_dev_lo = Scalar::zeros(_stress.size() - 1);
-  // auto stress_dev = Scalar::zeros(_stress.size());
+  auto stress_dev_lo = Scalar::zeros(_stress.size() - 1);
+  auto stress_dev_hi = Scalar::zeros(_stress.size() - 1);
+  auto stress_dev = Scalar::zeros(_stress.size());
 
   for (std::size_t i = 0; i < _stress.size() - 1; i++)
   {
@@ -89,16 +91,18 @@ InterpolatedIsotropicHardening::set_value(bool out, bool dout_din, bool d2out_di
     X1[i] = *_hf_temps[i + 1];
     Y0[i] = *_stress[i];
 
-    // stress_dev_lo = (*_hf_temps[i + 1] - _temp_var) / (*_hf_temps[i + 1] - *_hf_temps[i]);
+    stress_dev_lo[i] = (*_hf_temps[i + 1] - _temp_var) / (*_hf_temps[i + 1] - *_hf_temps[i]);
+    stress_dev_hi[i] = (_temp_var - *_hf_temps[i]) / (*_hf_temps[i + 1] - *_hf_temps[i]);
   }
 
   const auto loc = Scalar(at::logical_and(at::gt(_temp_var, X0), at::le(_temp_var, X1)));
 
   const auto si = Scalar(slope.index({loc}));
+  const auto stress_dev_lo_i = Scalar(stress_dev_lo.index({loc}));
+  const auto stress_dev_hi_i = Scalar(stress_dev_hi.index({loc}));
 
-  // auto ind_lo = Scalar::linspace();
-
-  // stress_dev.index({loc}) = stress_dev_lo.index({loc});
+  stress_dev.batch_index({indexing::Slice(indexing::None, -1)}).index({loc}) = 5;
+  stress_dev.batch_index({indexing::Slice(1, indexing::None)}).index({loc}) = 6;
 
   // works for two values
   // const auto ind_lo = 0;
@@ -109,6 +113,7 @@ InterpolatedIsotropicHardening::set_value(bool out, bool dout_din, bool d2out_di
   {
     const auto X0i = Scalar(X0.index({loc}));
     const auto Y0i = Scalar(Y0.index({loc}));
+
     _h = Y0i + si * (_temp_var - X0i);
     // works for two values
     // _h = (1 - frac) * (*_stress[ind_lo]) + frac * (*_stress[ind_hi]);
@@ -119,20 +124,20 @@ InterpolatedIsotropicHardening::set_value(bool out, bool dout_din, bool d2out_di
     if (_temp_var.is_dependent())
       _h.d(_temp_var) = si;
 
-    // for (std::size_t i = 0; i < _stress.size(); i++)
-    // {
-    //   if (_stress[i]->is_dependent())
-    //   {
-    //     _h.d(*_stress[i]) = Scalar(stress_dev[i]);
-    //   }
-    // }
+    for (std::size_t i = 0; i < _stress.size(); i++)
+    {
+      if (_stress[i]->is_dependent())
+      {
+        _h.d(*_stress[i]) = Scalar(stress_dev[i]);
+      }
+    }
 
-    // the derivatives
-    if (_stress[0]->is_dependent())
-      _h.d(*_stress[0]) = (*_hf_temps[1] - _temp_var) / (*_hf_temps[1] - *_hf_temps[0]);
+    // // the derivatives
+    // if (_stress[0]->is_dependent())
+    //   _h.d(*_stress[0]) = (*_hf_temps[1] - _temp_var) / (*_hf_temps[1] - *_hf_temps[0]);
 
-    if (_stress[1]->is_dependent())
-      _h.d(*_stress[1]) = (_temp_var - *_hf_temps[0]) / (*_hf_temps[1] - *_hf_temps[0]);
+    // if (_stress[1]->is_dependent())
+    //   _h.d(*_stress[1]) = (_temp_var - *_hf_temps[0]) / (*_hf_temps[1] - *_hf_temps[0]);
 
     // works for two values
     // for (std::size_t i = 0; i < _stress.size(); i++)
