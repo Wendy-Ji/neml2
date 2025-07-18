@@ -38,18 +38,16 @@ OptionSet
 LinearInterpolationOnVariable::expected_options()
 {
   OptionSet options = Model::expected_options();
-  options.doc() = "Voce isotropic hardening model, \\f$ h = R \\left[ 1 - \\exp(-d \\varepsilon_p) "
-                  "\\right] \\f$, where \\f$ R \\f$ is the isotropic hardening upon saturation, "
-                  "and \\f$ d \\f$ is the hardening rate.";
+  options.doc() = "This object performs a linear interpolation, with scalars as the abscissa and "
+                  "variables as the ordinates.";
 
   options.set<bool>("define_second_derivatives") = true;
 
   options.set_input("argument");
   options.set("argument").doc() = "Argument used to query the interpolant";
 
-  options.set_parameter<std::vector<TensorName<Scalar>>>("abscissa_vector");
-  options.set("abscissa").doc() =
-      "Vector of scalars defining the abscissa values of the interpolant";
+  options.set<TensorName<Scalar>>("abscissa");
+  options.set("abscissa").doc() = "Scalar defining the abscissa values of the interpolant";
 
   options.set<std::vector<VariableName>>("ordinate_vector");
   options.set("ordinate_vector").doc() =
@@ -63,8 +61,8 @@ LinearInterpolationOnVariable::expected_options()
 
 LinearInterpolationOnVariable::LinearInterpolationOnVariable(const OptionSet & options)
   : Model(options),
-    _X(declare_buffer<Scalar>("X", "abscissa")),
     _x(declare_input_variable<Scalar>("argument")),
+    _X(declare_buffer<Scalar>("X", "abscissa")),
     _output(declare_output_variable<Scalar>("output"))
 {
   for (const auto & y : options.get<std::vector<VariableName>>("ordinate_vector"))
@@ -74,50 +72,38 @@ LinearInterpolationOnVariable::LinearInterpolationOnVariable(const OptionSet & o
 void
 LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din2)
 {
-  std::vector<Scalar> ytens;
+  std::vector<Scalar> ytens(_Y.size());
   for (std::size_t i = 0; i < _Y.size(); i++)
     ytens[i] = _Y[i]->value();
-  auto Y = batch_stack(ytens, -1);
+  const auto Y = batch_stack(ytens, -1);
 
-  auto slope = diff(Y) / diff(_X);
+  const auto slope = diff(Y) / diff(_X);
+  const auto X0 = _X.batch_index({indexing::Ellipsis, indexing::Slice(indexing::None, -1)});
+  const auto X1 = _X.batch_index({indexing::Ellipsis, indexing::Slice(1, indexing::None)});
+  const auto Y0 = Y.batch_index({indexing::Ellipsis, indexing::Slice(indexing::None, -1)});
 
-  auto slope = Scalar::zeros(_Y.size() - 1);
-  auto X0 = Scalar::zeros(_Y.size() - 1);
-  auto X1 = Scalar::zeros(_Y.size() - 1);
-  auto Y0 = Scalar::zeros(_Y.size() - 1);
+  const auto x = Scalar(_x);
+  std::cout << "x.batch_unsqueeze(-1): " << x.batch_unsqueeze(-1).batch_sizes() << " "
+            << x.batch_unsqueeze(-1).base_sizes() << std::endl;
+  std::cout << "X0: " << X0.batch_sizes() << " " << X0.base_sizes() << std::endl;
+  std::cout << "X1: " << X1.batch_sizes() << " " << X1.base_sizes() << std::endl;
+  const auto loc =
+      Scalar(at::logical_and(at::gt(x.batch_unsqueeze(-1), X0), at::le(x.batch_unsqueeze(-1), X1)));
+  const auto si = LinearInterpolation<Scalar>::mask(slope, loc);
 
-  // partial derivatives for ordinate variables
-  auto Y_dev_lo = Scalar::zeros(_Y.size() - 1);
-  auto Y_dev_hi = Scalar::zeros(_Y.size() - 1);
   auto Y_dev = Scalar::zeros(_Y.size());
-
-  for (std::size_t i = 0; i < _Y.size() - 1; i++)
-  {
-    slope[i] = (*_Y[i + 1] - *_Y[i]) / (*_X[i + 1] - *_X[i]);
-    X0[i] = *_X[i];
-    X1[i] = *_X[i + 1];
-    Y0[i] = *_Y[i];
-
-    Y_dev_lo[i] = (*_X[i + 1] - _x) / (*_X[i + 1] - *_X[i]);
-    Y_dev_hi[i] = 1 - Y_dev_lo[i];
-  }
-
-  const auto loc = Scalar(at::logical_and(at::ge(_x, X0), at::lt(_x, X1)));
-  const auto si = Scalar(slope.index({loc}));
-
+  const auto Ydev0 = (X1 - x) / diff(_X);
   Y_dev.batch_index({indexing::Slice(indexing::None, -1)})
-      .index_put_({loc}, Scalar(Y_dev_lo.index({loc})));
+      .index_put_({loc}, LinearInterpolation<Scalar>::mask(Ydev0, loc));
   Y_dev.batch_index({indexing::Slice(1, indexing::None)})
-      .index_put_({loc}, Scalar(Y_dev_hi.index({loc})));
-
-  auto m = LinearInterpolation<Scalar>::mask(slope, loc);
+      .index_put_({loc}, 1 - LinearInterpolation<Scalar>::mask(Ydev0, loc));
 
   if (out)
   {
-    const auto X0i = Scalar(X0.index({loc}));
-    const auto Y0i = Scalar(Y0.index({loc}));
+    const auto X0i = LinearInterpolation<Scalar>::mask(X0, loc);
+    const auto Y0i = LinearInterpolation<Scalar>::mask(Y0, loc);
 
-    _output = Y0i + si * (_x - X0i);
+    _output = Y0i + si * (x - X0i);
   }
 
   if (dout_din)
