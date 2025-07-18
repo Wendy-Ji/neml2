@@ -23,8 +23,11 @@
 // THE SOFTWARE.
 
 #include "neml2/models/LinearInterpolationOnVariable.h"
+#include "neml2/models/LinearInterpolation.h"
 #include "neml2/tensors/Scalar.h"
 #include "neml2/tensors/indexing.h"
+#include "neml2/tensors/functions/stack.h"
+#include "neml2/tensors/functions/diff.h"
 
 namespace neml2
 {
@@ -45,7 +48,7 @@ LinearInterpolationOnVariable::expected_options()
   options.set("argument").doc() = "Argument used to query the interpolant";
 
   options.set_parameter<std::vector<TensorName<Scalar>>>("abscissa_vector");
-  options.set("abscissa_vector").doc() =
+  options.set("abscissa").doc() =
       "Vector of scalars defining the abscissa values of the interpolant";
 
   options.set<std::vector<VariableName>>("ordinate_vector");
@@ -60,23 +63,24 @@ LinearInterpolationOnVariable::expected_options()
 
 LinearInterpolationOnVariable::LinearInterpolationOnVariable(const OptionSet & options)
   : Model(options),
+    _X(declare_buffer<Scalar>("X", "abscissa")),
     _x(declare_input_variable<Scalar>("argument")),
     _output(declare_output_variable<Scalar>("output"))
 {
   for (const auto & y : options.get<std::vector<VariableName>>("ordinate_vector"))
     _Y.push_back(&declare_input_variable<Scalar>(y));
-
-  const auto X_refs = options.get<std::vector<TensorName<Scalar>>>("abscissa_vector");
-  _X.resize(_Y.size());
-  for (std::size_t i = 0; i < _Y.size(); i++)
-  {
-    _X[i] = &declare_buffer<Scalar>("X_" + std::to_string(i), X_refs[i]);
-  }
 }
 
 void
 LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din2)
 {
+  std::vector<Scalar> ytens;
+  for (std::size_t i = 0; i < _Y.size(); i++)
+    ytens[i] = _Y[i]->value();
+  auto Y = batch_stack(ytens, -1);
+
+  auto slope = diff(Y) / diff(_X);
+
   auto slope = Scalar::zeros(_Y.size() - 1);
   auto X0 = Scalar::zeros(_Y.size() - 1);
   auto X1 = Scalar::zeros(_Y.size() - 1);
@@ -105,6 +109,8 @@ LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din
       .index_put_({loc}, Scalar(Y_dev_lo.index({loc})));
   Y_dev.batch_index({indexing::Slice(1, indexing::None)})
       .index_put_({loc}, Scalar(Y_dev_hi.index({loc})));
+
+  auto m = LinearInterpolation<Scalar>::mask(slope, loc);
 
   if (out)
   {

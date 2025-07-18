@@ -42,7 +42,7 @@ protected:
   const Variable<Scalar> & _x;
 
   /// The abscissa values of the interpolant
-  std::vector<const Scalar *> _X;
+  const Scalar & _X;
 
   /// The ordinate variables of the interpolant
   std::vector<const Variable<Scalar> *> _Y;

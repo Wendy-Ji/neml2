@@ -80,10 +80,6 @@ public:
 
   LinearInterpolation(const OptionSet & options);
 
-protected:
-  void set_value(bool out, bool dout_din, bool d2out_din2) override;
-
-private:
   /**
    * @brief Apply the mask tensor \p m on the input \p in.
    *
@@ -95,13 +91,16 @@ private:
    * So if some day we relax the 2nd assumption, this method need to be adapted accordingly.
    */
   template <typename T2>
-  T2 mask(const T2 & in, const Scalar & m) const;
+  static T2 mask(const T2 & in, const Scalar & m);
+
+protected:
+  void set_value(bool out, bool dout_din, bool d2out_din2) override;
 };
 
 template <typename T>
 template <typename T2>
 T2
-LinearInterpolation<T>::mask(const T2 & in, const Scalar & m) const
+LinearInterpolation<T>::mask(const T2 & in, const Scalar & m)
 {
   // Resulting batch shape
   const auto B = m.batch_sizes().slice(0, -1);
