@@ -9,11 +9,18 @@
   []
 []
 
+[Tensors]
+  [X]
+    type = Scalar
+    values = '0 100 200 300 400'
+  []
+[]
+
 [Models]
   [model]
     type = LinearInterpolationOnVariable
     argument = 'state/T'
-    abscissa_vector = '0 100 200 300 400'
+    abscissa = 'X'
     ordinate_vector = 'state/A state/B state/C state/D state/E'
     output = 'state/outsub/C'
   []
