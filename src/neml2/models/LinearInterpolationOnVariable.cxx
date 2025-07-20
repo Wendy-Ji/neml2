@@ -83,20 +83,27 @@ LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din
   const auto Y0 = Y.batch_index({indexing::Ellipsis, indexing::Slice(indexing::None, -1)});
 
   const auto x = Scalar(_x);
-  std::cout << "x.batch_unsqueeze(-1): " << x.batch_unsqueeze(-1).batch_sizes() << " "
-            << x.batch_unsqueeze(-1).base_sizes() << std::endl;
-  std::cout << "X0: " << X0.batch_sizes() << " " << X0.base_sizes() << std::endl;
-  std::cout << "X1: " << X1.batch_sizes() << " " << X1.base_sizes() << std::endl;
   const auto loc =
       Scalar(at::logical_and(at::gt(x.batch_unsqueeze(-1), X0), at::le(x.batch_unsqueeze(-1), X1)));
   const auto si = LinearInterpolation<Scalar>::mask(slope, loc);
 
   auto Y_dev = Scalar::zeros(_Y.size());
-  const auto Ydev0 = (X1 - x) / diff(_X);
-  Y_dev.batch_index({indexing::Slice(indexing::None, -1)})
+  const auto Ydev0 = (X1 - x.batch_unsqueeze(-1)) / diff(_X);
+  std::cout << "x.batch_unsqueeze(-1): " << x.batch_unsqueeze(-1).batch_sizes() << " "
+            << x.batch_unsqueeze(-1).base_sizes() << std::endl;
+  std::cout << "X0: " << X0.batch_sizes() << " " << X0.base_sizes() << std::endl;
+  std::cout << "X1: " << X1.batch_sizes() << " " << X1.base_sizes() << std::endl;
+  std::cout << "Ydev: " << Y_dev.batch_sizes() << " " << Y_dev.base_sizes() << std::endl;
+  std::cout << "Ydev0: " << Ydev0.batch_sizes() << " " << Ydev0.base_sizes() << std::endl;
+  std::cout << "si: " << si.batch_sizes() << " " << si.base_sizes() << std::endl;
+  Y_dev.batch_unsqueeze(-1)
+      .batch_index({indexing::Slice(indexing::None, -1)})
       .index_put_({loc}, LinearInterpolation<Scalar>::mask(Ydev0, loc));
-  Y_dev.batch_index({indexing::Slice(1, indexing::None)})
+  std::cout << "wow" << std::endl;
+  Y_dev.batch_unsqueeze(-1)
+      .batch_index({indexing::Slice(1, indexing::None)})
       .index_put_({loc}, 1 - LinearInterpolation<Scalar>::mask(Ydev0, loc));
+  std::cout << "wow2" << std::endl;
 
   if (out)
   {
