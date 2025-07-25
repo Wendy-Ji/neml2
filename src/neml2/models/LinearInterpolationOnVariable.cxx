@@ -95,19 +95,6 @@ LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din
   Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(1, indexing::None)})
       .index_put_({loc}, 1 - LinearInterpolation<Scalar>::mask(Ydev0, loc));
 
-  std::cout << "Y_dev_mod[0] "
-            << Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(0, 1)}).batch_sizes()
-            << Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(0, 1)}).base_sizes()
-            << std::endl;
-  std::cout << "Y_dev_mod_2[0] "
-            << (Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(0, 1)}) *
-                Scalar::identity_map(_Y[0]->options()))
-                   .batch_sizes()
-            << (Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(0, 1)}) *
-                Scalar::identity_map(_Y[0]->options()))
-                   .base_sizes()
-            << std::endl;
-
   if (out)
   {
     const auto X0i = LinearInterpolation<Scalar>::mask(X0, loc);
