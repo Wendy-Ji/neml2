@@ -87,23 +87,26 @@ LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din
       Scalar(at::logical_and(at::gt(x.batch_unsqueeze(-1), X0), at::le(x.batch_unsqueeze(-1), X1)));
   const auto si = LinearInterpolation<Scalar>::mask(slope, loc);
 
-  auto Y_dev = Scalar::zeros(_Y.size());
+  auto Y_dev = Scalar::zeros(Y.batch_sizes());
   const auto Ydev0 = (X1 - x.batch_unsqueeze(-1)) / diff(_X);
-  std::cout << "x.batch_unsqueeze(-1): " << x.batch_unsqueeze(-1).batch_sizes() << " "
-            << x.batch_unsqueeze(-1).base_sizes() << std::endl;
-  std::cout << "X0: " << X0.batch_sizes() << " " << X0.base_sizes() << std::endl;
-  std::cout << "X1: " << X1.batch_sizes() << " " << X1.base_sizes() << std::endl;
-  std::cout << "Ydev: " << Y_dev.batch_sizes() << " " << Y_dev.base_sizes() << std::endl;
-  std::cout << "Ydev0: " << Ydev0.batch_sizes() << " " << Ydev0.base_sizes() << std::endl;
-  std::cout << "si: " << si.batch_sizes() << " " << si.base_sizes() << std::endl;
-  Y_dev.batch_unsqueeze(-1)
-      .batch_index({indexing::Slice(indexing::None, -1)})
+
+  Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(indexing::None, -1)})
       .index_put_({loc}, LinearInterpolation<Scalar>::mask(Ydev0, loc));
-  std::cout << "wow" << std::endl;
-  Y_dev.batch_unsqueeze(-1)
-      .batch_index({indexing::Slice(1, indexing::None)})
+  Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(1, indexing::None)})
       .index_put_({loc}, 1 - LinearInterpolation<Scalar>::mask(Ydev0, loc));
-  std::cout << "wow2" << std::endl;
+
+  std::cout << "Y_dev_mod[0] "
+            << Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(0, 1)}).batch_sizes()
+            << Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(0, 1)}).base_sizes()
+            << std::endl;
+  std::cout << "Y_dev_mod_2[0] "
+            << (Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(0, 1)}) *
+                Scalar::identity_map(_Y[0]->options()))
+                   .batch_sizes()
+            << (Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(0, 1)}) *
+                Scalar::identity_map(_Y[0]->options()))
+                   .base_sizes()
+            << std::endl;
 
   if (out)
   {
@@ -122,7 +125,7 @@ LinearInterpolationOnVariable::set_value(bool out, bool dout_din, bool d2out_din
     {
       if (_Y[i]->is_dependent())
       {
-        _output.d(*_Y[i]) = Scalar(Y_dev[i]);
+        _output.d(*_Y[i]) = Y_dev.batch_index({indexing::Ellipsis, indexing::Slice(i, i + 1)});
       }
     }
   }

@@ -3,9 +3,9 @@
     type = ModelUnitTest
     model = 'model'
     input_Scalar_names = 'state/X state/A state/B state/C'
-    input_Scalar_values = '150 60 70 80'
+    input_Scalar_values = '250 60 70 80'
     output_Scalar_names = 'state/outsub/C'
-    output_Scalar_values = '65'
+    output_Scalar_values = '75'
   []
 []
 
